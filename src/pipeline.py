@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Optional
 
-from src.config import TARGET_NICHE, DISCOVERY_TARGET, YOUTUBE_API_KEY, GEMINI_API_KEY
+from src.config import TARGET_NICHE, DISCOVERY_TARGET, YOUTUBE_API_KEY, GEMINI_API_KEY, GROQ_API_KEY
 from src.database.models import (
     init_db,
     insert_influencer,
@@ -181,8 +181,8 @@ class OutreachPipeline:
         run_id = log_pipeline_run("PERSONALIZATION")
         qualified = get_qualified_influencers()
 
-        if not GEMINI_API_KEY:
-            logger.warning("GEMINI_API_KEY not set. Using fallback message generator.")
+        if not GEMINI_API_KEY and not GROQ_API_KEY:
+            logger.warning("Neither GROQ_API_KEY nor GEMINI_API_KEY is set. Using fallback message generator.")
 
         generator = MessageGenerator()
         personalized = generator.generate_batch(qualified)

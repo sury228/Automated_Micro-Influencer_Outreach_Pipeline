@@ -1,45 +1,55 @@
 """
-Micro-Influencer Outreach System - High-Contrast Aligned Bold Theme
+Automated Micro-Influencer Outreach System
+Clean, Premium & Intuitive Dashboard
 """
 
 import streamlit as st
 import pandas as pd
 import sqlite3
 import sys
+import re
 from pathlib import Path
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import DB_PATH, TARGET_NICHE, MIN_FOLLOWERS, MAX_FOLLOWERS, MIN_ENGAGEMENT_RATE
-from src.database.models import get_stats, get_all_influencers, get_qualified_influencers, get_outreach_logs, clear_all_data
+from src.config import DB_PATH, TARGET_NICHE, MIN_FOLLOWERS, MAX_FOLLOWERS, MIN_ENGAGEMENT_RATE, SMTP_EMAIL
+from src.database.models import (
+    get_stats,
+    get_all_influencers,
+    get_qualified_influencers,
+    get_outreach_logs,
+    clear_all_data,
+    delete_influencer,
+    clear_influencer_message,
+    update_influencer,
+)
 from src.pipeline import OutreachPipeline
 from src.outreach.tracker import OutreachTracker
+from src.outreach.email_sender import EmailSender
+from src.personalization.generator import MessageGenerator
 
 # -----------------------------------------------------------------------------
-# 1. Page Configuration & Custom CSS (Clean Typography without breaking Streamlit Icons)
+# 1. Page Configuration & Premium Minimalist CSS
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Influencer Outreach Dashboard",
-    page_icon="⚡",
+    page_title="AI Influencer Outreach Studio",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# High-Contrast Theme: Solid Black (#000000) Bold (700/800) Text with Icon Protection
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap');
 
-    /* Global Text Override - Targeted without breaking Streamlit Material Icons */
+    /* Global Typography & Text Colors */
     html, body, p, label, h1, h2, h3, h4, h5, h6, .stMarkdown, [data-testid="stMarkdownContainer"] p {
         font-family: 'Plus Jakarta Sans', sans-serif;
-        color: #000000 !important;
-        font-weight: 700 !important;
+        color: #0F2942;
     }
     
-    /* Preserve Streamlit Material Symbol Icons */
+    /* Preserve Streamlit Material Icons */
     [data-testid="stSidebarCollapseButton"] span, 
     [data-testid="stIcon"], 
     i, 
@@ -49,200 +59,248 @@ st.markdown("""
         font-weight: normal !important;
     }
 
+    /* Light Blue & Pure White Background */
     .stApp {
-        background: linear-gradient(135deg, #FBF8EF 0%, #F3ECE0 50%, #EAE0D0 100%);
+        background: linear-gradient(180deg, #F0F7FF 0%, #FFFFFF 320px, #F4F9FD 100%);
         background-attachment: fixed;
     }
 
-    /* Main Container Padding */
     .main .block-container {
-        padding-top: 1.6rem;
-        padding-bottom: 3rem;
-        max-width: 1450px;
+        padding-top: 1.4rem;
+        padding-bottom: 2.5rem;
+        max-width: 1400px;
     }
 
-    /* Hero Banner */
-    .hero-container {
-        background: #FFFFFF;
-        border: 2.5px solid #D97706;
-        border-radius: 18px;
-        padding: 1.8rem 2.4rem;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 25px -5px rgba(217, 119, 6, 0.25);
+    /* Sidebar Styling - Light Blue Palette */
+    section[data-testid="stSidebar"] {
+        background-color: #F8FBFF !important;
+        border-right: 1px solid #BAE6FD !important;
+    }
+    section[data-testid="stSidebar"] .stMarkdown h3 {
+        color: #0369A1 !important;
+    }
+    section[data-testid="stSidebar"] .stCaption {
+        color: #0284C7 !important;
+    }
+
+    /* Premium White & Light Blue Hero Banner */
+    .hero-banner {
+        background: linear-gradient(135deg, #E0F2FE 0%, #EFF6FF 50%, #FFFFFF 100%);
+        border: 1px solid #BAE6FD;
+        border-radius: 16px;
+        padding: 1.5rem 2rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 4px 20px -2px rgba(14, 165, 233, 0.12);
     }
     .hero-title {
-        font-size: 2.4rem;
-        font-weight: 900 !important;
-        color: #000000 !important;
-        margin-bottom: 0.4rem;
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #0369A1 !important;
         letter-spacing: -0.02em;
+        margin: 0;
     }
     .hero-subtitle {
-        font-size: 1.05rem;
-        color: #000000 !important;
-        font-weight: 700 !important;
+        font-size: 0.92rem;
+        color: #0284C7 !important;
+        font-weight: 600;
+        margin-top: 0.25rem;
+    }
+    .hero-tag {
+        background: #FFFFFF;
+        color: #0284C7 !important;
+        border: 1px solid #7DD3FC;
+        padding: 0.4rem 0.95rem;
+        border-radius: 9999px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        box-shadow: 0 2px 8px rgba(14, 165, 233, 0.12);
     }
 
-    /* Metric Cards */
-    .metric-card-wrapper {
+    /* Modern Minimalist KPI Cards - White & Light Blue */
+    .kpi-card {
         background: #FFFFFF;
-        border: 2.5px solid #B45309;
-        border-radius: 16px;
-        padding: 1.3rem 1.4rem;
-        transition: all 0.3s ease;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-        height: 100%;
-    }
-    .metric-card-wrapper:hover {
-        transform: translateY(-3px);
-        border-color: #D97706;
-        box-shadow: 0 12px 24px -4px rgba(180, 83, 9, 0.3);
-    }
-    .metric-val {
-        font-size: 2.7rem;
-        font-weight: 900 !important;
-        color: #000000 !important;
-        line-height: 1.1;
-        letter-spacing: -0.03em;
-    }
-    .metric-lbl {
-        font-size: 0.88rem;
-        font-weight: 800 !important;
-        color: #000000 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-top: 0.4rem;
-    }
-
-    /* Clean Aligned Rule Cards for Tab 3 */
-    .rule-card {
-        background: #FFFFFF;
-        border: 2.5px solid #D97706;
+        border: 1px solid #E0F2FE;
+        border-top: 3.5px solid #0EA5E9;
         border-radius: 14px;
         padding: 1.1rem 1.2rem;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-        min-height: 110px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
+        box-shadow: 0 2px 10px rgba(14, 165, 233, 0.05);
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
-    .rule-card-title {
-        font-size: 0.95rem;
-        font-weight: 900 !important;
-        color: #000000 !important;
-        margin-bottom: 0.5rem;
-        white-space: nowrap;
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        border-color: #7DD3FC;
+        box-shadow: 0 8px 24px rgba(14, 165, 233, 0.15);
     }
-    .rule-card-value {
-        font-size: 0.9rem;
-        font-weight: 800 !important;
-        color: #92400E !important;
-        background: #FEF3C7;
-        padding: 0.35rem 0.8rem;
-        border-radius: 8px;
-        border: 1px solid #F59E0B;
-        display: inline-block;
-        white-space: nowrap;
+    .kpi-val {
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: #0369A1 !important;
+        line-height: 1.1;
+    }
+    .kpi-lbl {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #0284C7 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-top: 0.35rem;
     }
 
-    /* Status Badges */
-    .badge {
+    /* Pill Badges */
+    .pill {
         display: inline-block;
-        padding: 0.35rem 0.9rem;
+        padding: 0.25rem 0.75rem;
         border-radius: 9999px;
-        font-size: 0.85rem;
-        font-weight: 800 !important;
-        letter-spacing: 0.03em;
+        font-size: 0.78rem;
+        font-weight: 700;
     }
-    .badge-qualified {
-        background: #D1FAE5;
-        color: #065F46 !important;
-        border: 2px solid #059669;
+    .pill-blue {
+        background: #E0F2FE;
+        color: #0284C7 !important;
+        border: 1px solid #BAE6FD;
     }
-    .badge-disqualified {
-        background: #FEE2E2;
-        color: #991B1B !important;
-        border: 2px solid #DC2626;
+    .pill-green {
+        background: #F0FDF4;
+        color: #059669 !important;
+        border: 1px solid #A7F3D0;
     }
-
-    /* Pitch Boxes */
-    .pitch-box {
-        background: #FFFFFF;
-        border: 2.5px solid #D97706;
-        border-radius: 14px;
-        padding: 1.3rem;
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        color: #000000 !important;
-        font-weight: 700 !important;
-        font-size: 1rem;
-        line-height: 1.65;
-        white-space: pre-wrap;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    .pill-red {
+        background: #FEF2F2;
+        color: #E11D48 !important;
+        border: 1px solid #FECDD3;
+    }
+    .pill-amber {
+        background: #F0F9FF;
+        color: #0284C7 !important;
+        border: 1px solid #BAE6FD;
     }
 
-    /* Dataframe Overrides */
-    [data-testid="stDataFrame"] {
-        background-color: #FFFFFF !important;
-        border-radius: 14px !important;
-        border: 2.5px solid #B45309 !important;
-        padding: 4px !important;
-    }
-    [data-testid="stDataFrame"] th {
-        background-color: #FEF3C7 !important;
-        color: #000000 !important;
-        font-weight: 800 !important;
-        font-size: 0.95rem !important;
-    }
-    [data-testid="stDataFrame"] td {
-        color: #000000 !important;
-        font-weight: 700 !important;
-        font-size: 0.92rem !important;
-    }
-
-    /* Input & Select Box Text */
-    input, select, textarea, [data-baseweb="select"] {
-        color: #000000 !important;
-        font-weight: 700 !important;
-        background-color: #FFFFFF !important;
-        border: 2px solid #B45309 !important;
-    }
-
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #F3ECE0;
-        border-right: 2px solid #D97706;
-    }
-
-    /* Tabs Styling */
+    /* Modern Tabs in White & Light Blue */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #EAE0D0;
-        padding: 8px;
-        border-radius: 14px;
-        border: 2px solid #B45309;
+        gap: 6px;
+        background-color: #E0F2FE;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid #BAE6FD;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 46px;
-        border-radius: 10px;
-        color: #000000 !important;
-        font-weight: 800 !important;
-        font-size: 0.95rem;
-        padding: 0 20px;
+        height: 40px;
+        border-radius: 8px;
+        color: #0369A1 !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem;
+        padding: 0 16px;
+        transition: all 0.2s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: rgba(255, 255, 255, 0.6);
+        color: #0284C7 !important;
     }
     .stTabs [aria-selected="true"] {
-        background: #D97706 !important;
+        background: #FFFFFF !important;
+        color: #0284C7 !important;
+        font-weight: 800 !important;
+        border: 1px solid #BAE6FD;
+        box-shadow: 0 2px 10px rgba(14, 165, 233, 0.15);
+    }
+
+    /* Clean Card Container */
+    .clean-box {
+        background: #FFFFFF;
+        border: 1px solid #BAE6FD;
+        border-radius: 12px;
+        padding: 1.2rem;
+        box-shadow: 0 2px 8px rgba(14, 165, 233, 0.05);
+    }
+
+    /* Rule Badges */
+    .rule-badge {
+        background: #FFFFFF;
+        border: 1px solid #BAE6FD;
+        border-top: 3px solid #38BDF8;
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        text-align: center;
+        box-shadow: 0 2px 6px rgba(14, 165, 233, 0.05);
+    }
+    .rule-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #0284C7;
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+    .rule-val {
+        font-size: 1.05rem;
+        font-weight: 800;
+        color: #0369A1;
+    }
+
+    /* Buttons Styling in White & Light Blue */
+    .stButton > button {
+        border-radius: 10px;
+        font-weight: 700;
+        border: 1px solid #BAE6FD;
+        background: #FFFFFF;
+        color: #0284C7;
+        transition: all 0.2s ease;
+    }
+    .stButton > button:hover {
+        background: #F0F9FF;
+        border-color: #38BDF8;
+        color: #0369A1;
+        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.15);
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #0284C7 0%, #0EA5E9 100%) !important;
+        border: 1px solid #0284C7 !important;
         color: #FFFFFF !important;
-        font-weight: 900 !important;
-        box-shadow: 0 4px 14px rgba(180, 83, 9, 0.4);
+        box-shadow: 0 4px 14px rgba(14, 165, 233, 0.25) !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #0369A1 0%, #0284C7 100%) !important;
+        box-shadow: 0 6px 18px rgba(14, 165, 233, 0.35) !important;
+    }
+
+    /* Inputs, Textareas, Selectboxes */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div {
+        background-color: #FFFFFF !important;
+        border: 1px solid #BAE6FD !important;
+        border-radius: 8px !important;
+        color: #0F172A !important;
+    }
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: #0EA5E9 !important;
+        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2) !important;
+    }
+
+    /* Dataframe container */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #BAE6FD !important;
+        border-radius: 10px !important;
+        overflow: hidden !important;
+        background: #FFFFFF !important;
+    }
+
+    /* Streamlit Radios & Checkboxes */
+    .stRadio [role="radiogroup"] {
+        background-color: #F0F9FF;
+        padding: 6px 12px;
+        border-radius: 10px;
+        border: 1px solid #BAE6FD;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 # -----------------------------------------------------------------------------
-# 2. Helper Data Loaders
+# 2. Data Loaders
 # -----------------------------------------------------------------------------
 def load_data():
     """Load latest dataset from SQLite database."""
@@ -252,113 +310,106 @@ def load_data():
         SELECT ol.id, i.name, i.platform, i.email, ol.channel, ol.status, ol.sent_at, ol.created_at, ol.error_message
         FROM outreach_log ol
         JOIN influencers i ON ol.influencer_id = i.id
-        ORDER BY ol.created_at DESC
+        ORDER BY ol.id DESC
     """, conn)
     conn.close()
     return df_all, df_logs
 
 
 # -----------------------------------------------------------------------------
-# 3. Sidebar Panel
+# 3. Sidebar Controls
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### ⚡ Outreach Engine")
-    st.markdown(f"**Target Niche:** `{TARGET_NICHE}`")
-    st.markdown(f"**Filtering Rules:** `5K–100K Subs | ≥{MIN_ENGAGEMENT_RATE}% Eng`")
+    st.markdown("### Quick Controls")
+    st.caption(f"Niche: **{TARGET_NICHE}** | Rules: **5K–100K Subs**")
     st.divider()
 
-    st.markdown("#### 🛠️ Pipeline Controls")
-
-    if st.button("▶️ Execute Full Pipeline", use_container_width=True, type="primary"):
-        with st.spinner("Running discovery, qualification, enrichment, LLM pitch & outreach..."):
+    if st.button("Run Full Pipeline", use_container_width=True, type="primary"):
+        with st.spinner("Executing pipeline..."):
             pipeline = OutreachPipeline(simulate_email=True)
             res = pipeline.run_full_pipeline()
             if res.get("success"):
-                st.toast(f"Pipeline completed in {res['duration']}s!", icon="✅")
+                st.toast("Pipeline complete! Creators discovered and qualified.")
                 st.rerun()
             else:
                 st.error(f"Error: {res.get('error')}")
 
-    if st.button("🎲 Load 50 Demo Creators", use_container_width=True):
-        with st.spinner("Populating 50 micro-influencer records..."):
+    if st.button("Load 50 Demo Creators", use_container_width=True):
+        with st.spinner("Loading demo records..."):
             import subprocess
             subprocess.run([sys.executable, "run.py", "--action", "demo-data"], cwd=str(PROJECT_ROOT))
-            st.toast("50 Demo Creators Loaded!", icon="🎉")
+            st.toast("50 Demo creators loaded and qualified.")
             st.rerun()
 
-    if st.button("📥 Export All CSV Datasets", use_container_width=True):
+    if st.button("Export CSV Reports", use_container_width=True):
         tracker = OutreachTracker()
-        paths = tracker.export_all()
-        st.toast("CSVs Exported to data/ and outputs/!", icon="💾")
+        tracker.export_all()
+        st.toast("CSV files saved to data/ and outputs/.")
 
-    if st.button("🗑️ Reset Database", use_container_width=True):
+    if st.button("Clear Database", use_container_width=True):
         clear_all_data()
-        st.toast("Database Cleared!", icon="🧹")
+        st.toast("Database reset successfully.")
         st.rerun()
 
     st.divider()
-    st.caption("Automated Influencer Outreach System")
+    st.caption("AI Outreach Pipeline • Safe Mode Active")
 
 
 # -----------------------------------------------------------------------------
-# 4. Hero Banner
+# 4. Header Banner & KPIs
 # -----------------------------------------------------------------------------
 st.markdown("""
-<div class="hero-container">
-    <div class="hero-title">Automated Micro-Influencer Outreach Pipeline</div>
-    <div class="hero-subtitle">
-        AI Discovery • Rule-Based Qualification Audit • Profile Enrichment • Gemini LLM Personalization • Outreach Tracking
+<div class="hero-banner">
+    <div>
+        <div class="hero-title">AI Micro-Influencer Outreach Studio</div>
+        <div class="hero-subtitle">Discovery • Qualification Audit • AI Personalization • User-Approved Delivery</div>
     </div>
+    <div class="hero-tag">Live Studio</div>
 </div>
 """, unsafe_allow_html=True)
 
-# Load data & statistics
 df_all, df_logs = load_data()
 stats = get_stats()
 
-
-# -----------------------------------------------------------------------------
-# 5. Top KPI Stat Cards
-# -----------------------------------------------------------------------------
-c1, c2, c3, c4, c5 = st.columns(5)
-
-with c1:
+# KPI Metric Row
+k1, k2, k3, k4, k5 = st.columns(5)
+with k1:
     st.markdown(f"""
-    <div class="metric-card-wrapper">
-        <div class="metric-val">{stats['total_discovered']}</div>
-        <div class="metric-lbl">Total Discovered</div>
+    <div class="kpi-card">
+        <div class="kpi-val" style="color: #0369A1 !important;">{stats['total_discovered']}</div>
+        <div class="kpi-lbl">Total Discovered</div>
     </div>
     """, unsafe_allow_html=True)
 
-with c2:
+with k2:
     st.markdown(f"""
-    <div class="metric-card-wrapper">
-        <div class="metric-val" style="color: #059669 !important;">{stats['qualified']}</div>
-        <div class="metric-lbl">Qualified (5K–100K)</div>
+    <div class="kpi-card">
+        <div class="kpi-val" style="color: #0284C7 !important;">{stats['qualified']}</div>
+        <div class="kpi-lbl">Qualified (5K–100K)</div>
     </div>
     """, unsafe_allow_html=True)
 
-with c3:
+with k3:
     st.markdown(f"""
-    <div class="metric-card-wrapper">
-        <div class="metric-val" style="color: #DC2626 !important;">{stats['disqualified']}</div>
-        <div class="metric-lbl">Disqualified</div>
+    <div class="kpi-card">
+        <div class="kpi-val" style="color: #E11D48 !important;">{stats['disqualified']}</div>
+        <div class="kpi-lbl">Filtered Out</div>
     </div>
     """, unsafe_allow_html=True)
 
-with c4:
+with k4:
     st.markdown(f"""
-    <div class="metric-card-wrapper">
-        <div class="metric-val">{stats['messages_generated']}</div>
-        <div class="metric-lbl">AI Pitches Built</div>
+    <div class="kpi-card">
+        <div class="kpi-val" style="color: #0284C7 !important;">{stats['messages_generated']}</div>
+        <div class="kpi-lbl">AI Pitches Ready</div>
     </div>
     """, unsafe_allow_html=True)
 
-with c5:
+with k5:
     st.markdown(f"""
-    <div class="metric-card-wrapper">
-        <div class="metric-val" style="color: #2563EB !important;">{stats['emails_sent']}</div>
-        <div class="metric-lbl">Emails Sent / Logged</div>
+    <div class="kpi-card">
+        <div class="kpi-val" style="color: #0EA5E9 !important;">{stats['emails_sent']}</div>
+        <div class="kpi-lbl">Emails Sent</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -366,50 +417,50 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 
 # -----------------------------------------------------------------------------
-# 6. Tab Navigation Pages
+# 5. Tab Navigation
 # -----------------------------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Overview & Analytics",
-    "🔍 Discovered Influencers (50+)",
-    "🎯 Qualification Audit Log",
-    "💬 AI Personalization (Email & DM)",
-    "✉️ Outreach Delivery Tracker",
+    "Pipeline Overview",
+    "Discovered Creators",
+    "Qualification Audit",
+    "AI Email Studio",
+    "Delivery Logs",
 ])
 
 
 # -----------------------------------------------------------------------------
-# TAB 1: Overview & Analytics
+# TAB 1: Pipeline Overview
 # -----------------------------------------------------------------------------
 with tab1:
-    col_left, col_right = st.columns([1, 1])
+    c_left, c_right = st.columns([1, 1])
 
-    with col_left:
-        st.markdown("### 📈 Qualification Distribution")
+    with c_left:
+        st.markdown("##### Qualification Breakdown")
         if stats["total_discovered"] > 0:
             status_df = pd.DataFrame({
-                "Status": ["Qualified", "Disqualified", "Pending"],
-                "Count": [stats["qualified"], stats["disqualified"], stats["pending_qualification"]],
-            }).set_index("Status")
-            st.bar_chart(status_df, color="#B45309", height=300)
+                "Category": ["Qualified", "Disqualified", "Pending"],
+                "Creators": [stats["qualified"], stats["disqualified"], stats["pending_qualification"]],
+            }).set_index("Category")
+            st.bar_chart(status_df, color="#0EA5E9", height=240)
         else:
-            st.info("No creators discovered yet. Click **'🎲 Load 50 Demo Creators'** in the sidebar.")
+            st.info("No data yet. Click **'Load 50 Demo Creators'** in the sidebar.")
 
-    with col_right:
-        st.markdown("### 👥 Top Creators by Subscriber Count")
+    with c_right:
+        st.markdown("##### Top Creators by Audience Size")
         if not df_all.empty and "followers" in df_all.columns:
-            top_df = df_all.head(10)[["name", "followers"]].set_index("name")
-            st.bar_chart(top_df, color="#D97706", height=300)
+            top_df = df_all.head(8)[["name", "followers"]].set_index("name")
+            st.bar_chart(top_df, color="#38BDF8", height=240)
         else:
             st.info("No follower metrics available.")
 
-    st.markdown("### ⚡ End-to-End Pipeline Workflow Summary")
+    st.markdown("##### End-to-End Pipeline Workflow")
     st.dataframe(
         pd.DataFrame([
-            {"Stage": "1. Influencer Discovery", "Method / Tool": "YouTube Data API v3 & Web Scraper", "Criteria": f"Niche: {TARGET_NICHE}", "Output": f"{stats['total_discovered']} Profiles Discovered"},
-            {"Stage": "2. Qualification Audit", "Method / Tool": "Rule-Based Audit Engine", "Criteria": "5K–100K Subs, ≥2% Eng Rate, Tech Relevance", "Output": f"{stats['qualified']} Qualified Creators"},
-            {"Stage": "3. Profile Enrichment", "Method / Tool": "Contact Extractor & Demographic Estimator", "Criteria": "Extract Business Email, Content Themes", "Output": f"{stats['total_discovered']} Enriched Profiles"},
-            {"Stage": "4. AI Message Generation", "Method / Tool": "Google Gemini LLM (`gemini-2.0-flash`)", "Criteria": "60–90w Email Pitch + 15–30w Instagram DM", "Output": f"{stats['messages_generated']} Custom Messages"},
-            {"Stage": "5. Outreach & Tracking", "Method / Tool": "SMTP Gmail Sender & SQLite Log", "Criteria": "Duplicate Prevention & Delivery Log", "Output": f"{stats['emails_sent']} Emails Delivered"},
+            {"Stage": "1. Discovery", "Engine": "YouTube API & Scraper", "Criteria": f"Niche: {TARGET_NICHE}", "Output": f"{stats['total_discovered']} Discovered"},
+            {"Stage": "2. Qualification", "Engine": "Quantitative Rules", "Criteria": "5K–100K Subs, ≥2% Eng Rate", "Output": f"{stats['qualified']} Qualified"},
+            {"Stage": "3. Enrichment", "Engine": "Contact & Profile Parser", "Criteria": "Extract verified business emails", "Output": f"{stats['total_discovered']} Enriched"},
+            {"Stage": "4. AI Pitch", "Engine": "Groq / Gemini LLM", "Criteria": "Custom 60–90w Email + 15–30w DM", "Output": f"{stats['messages_generated']} Pitches"},
+            {"Stage": "5. Outreach", "Engine": "SMTP / Safe Simulator", "Criteria": "Duplicate prevention & audit log", "Output": f"{stats['emails_sent']} Delivered"},
         ]),
         use_container_width=True,
         hide_index=True,
@@ -417,192 +468,364 @@ with tab1:
 
 
 # -----------------------------------------------------------------------------
-# TAB 2: Discovered Influencers Data Table
+# TAB 2: Discovered Creators
 # -----------------------------------------------------------------------------
 with tab2:
-    st.markdown("### 🔍 Complete Discovered Influencers Dataset")
-    st.markdown("All 50+ influencer records with bold black readable text:")
+    st.markdown("##### Influencer Database")
+    
+    col_s, col_f, col_d = st.columns([3, 2, 2])
+    with col_s:
+        search = st.text_input("Search:", "", placeholder="Search by name, email, or theme...", label_visibility="collapsed")
+    with col_f:
+        filter_st = st.selectbox("Status:", ["QUALIFIED (5K–100K)", "All Records", "DISQUALIFIED"], label_visibility="collapsed")
 
-    c_search, c_filter = st.columns([3, 1])
-    with c_search:
-        search_term = st.text_input("🔎 Search by Creator Name, Topic, Niche, or Email:", "", placeholder="Type name, python, sarah, etc...")
-    with c_filter:
-        status_sel = st.selectbox("Filter Status:", ["All Statuses", "QUALIFIED", "DISQUALIFIED", "PENDING"])
+    filtered_df = df_all.copy()
+    if "QUALIFIED" in filter_st:
+        filtered_df = filtered_df[filtered_df["qualification_status"] == "QUALIFIED"]
+    elif "DISQUALIFIED" in filter_st:
+        filtered_df = filtered_df[filtered_df["qualification_status"] == "DISQUALIFIED"]
 
-    view_df = df_all.copy()
-
-    if status_sel != "All Statuses":
-        view_df = view_df[view_df["qualification_status"] == status_sel]
-
-    if search_term:
-        st_low = search_term.lower()
-        view_df = view_df[
-            view_df["name"].str.lower().str.contains(st_low, na=False) |
-            view_df["content_themes"].str.lower().str.contains(st_low, na=False) |
-            view_df["email"].str.lower().str.contains(st_low, na=False) |
-            view_df["niche"].str.lower().str.contains(st_low, na=False)
+    if search:
+        s_low = search.lower()
+        filtered_df = filtered_df[
+            filtered_df["name"].str.lower().str.contains(s_low, na=False) |
+            filtered_df["email"].str.lower().str.contains(s_low, na=False) |
+            filtered_df["content_themes"].str.lower().str.contains(s_low, na=False)
         ]
 
-    st.markdown(f"**Showing {len(view_df)} Creator Records**")
-
-    # Display all columns
-    cols_to_show = [
-        "name", "platform", "followers", "engagement_rate",
-        "niche", "content_themes", "email", "qualification_status",
-        "outreach_status", "audience_geography", "audience_age",
-    ]
-    avail_cols = [c for c in cols_to_show if c in view_df.columns]
+    cols_show = ["name", "platform", "followers", "engagement_rate", "niche", "content_themes", "email", "qualification_status", "outreach_status"]
+    avail = [c for c in cols_show if c in filtered_df.columns]
 
     st.dataframe(
-        view_df[avail_cols],
+        filtered_df[avail],
         use_container_width=True,
         hide_index=True,
-        height=550,
+        height=400,
         column_config={
-            "name": st.column_config.TextColumn("Creator Name", width="medium"),
+            "name": st.column_config.TextColumn("Creator", width="medium"),
             "platform": st.column_config.TextColumn("Platform", width="small"),
-            "followers": st.column_config.NumberColumn("Followers / Subs", format="%d", width="medium"),
-            "engagement_rate": st.column_config.NumberColumn("Engagement Rate", format="%.2f%%", width="medium"),
+            "followers": st.column_config.NumberColumn("Subs / Followers", format="%d"),
+            "engagement_rate": st.column_config.NumberColumn("Eng. Rate", format="%.2f%%"),
             "niche": st.column_config.TextColumn("Niche", width="small"),
-            "content_themes": st.column_config.TextColumn("Content Themes", width="medium"),
-            "email": st.column_config.TextColumn("Contact Email", width="medium"),
+            "content_themes": st.column_config.TextColumn("Themes", width="medium"),
+            "email": st.column_config.TextColumn("Email", width="medium"),
             "qualification_status": st.column_config.TextColumn("Verdict", width="small"),
             "outreach_status": st.column_config.TextColumn("Outreach", width="small"),
-            "audience_geography": st.column_config.TextColumn("Geography", width="small"),
-            "audience_age": st.column_config.TextColumn("Audience Age", width="small"),
         },
     )
 
+    # Clean Delete Option
+    with st.expander("Delete Channel Record", expanded=False):
+        if not df_all.empty:
+            d_c1, d_c2 = st.columns([3, 1])
+            with d_c1:
+                del_name = st.selectbox("Select channel to remove:", df_all["name"].tolist(), key="tab2_del_name")
+            with d_c2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Delete Channel", use_container_width=True, key="tab2_del_btn"):
+                    r_del = df_all[df_all["name"] == del_name].iloc[0]
+                    if delete_influencer(int(r_del["id"])):
+                        st.toast(f"Deleted '{del_name}' from database.")
+                        st.rerun()
+
 
 # -----------------------------------------------------------------------------
-# TAB 3: Qualification Audit Log
+# TAB 3: Qualification Audit
 # -----------------------------------------------------------------------------
 with tab3:
-    st.markdown("### 🎯 Multi-Criteria Qualification & Filtering Audit Engine")
-    st.markdown("Every influencer is audited against **4 quantitative criteria** before qualification:")
+    st.markdown("##### Multi-Rule Qualification Engine")
 
-    # Clean 4-Card Equal Height Aligned Grid
-    k1, k2, k3, k4 = st.columns(4)
-
-    with k1:
+    # 4 Crisp Metric Badges
+    q1, q2, q3, q4 = st.columns(4)
+    with q1:
         st.markdown("""
-        <div class="rule-card">
-            <div class="rule-card-title">Rule 1: Follower Range</div>
-            <div class="rule-card-value">5,000 – 100,000 Subs</div>
+        <div class="rule-badge">
+            <div class="rule-label">Rule 1: Followers</div>
+            <div class="rule-val">5,000 – 100,000</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with q2:
+        st.markdown("""
+        <div class="rule-badge">
+            <div class="rule-label">Rule 2: Engagement</div>
+            <div class="rule-val">≥ 2.0%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with q3:
+        st.markdown("""
+        <div class="rule-badge">
+            <div class="rule-label">Rule 3: Tech Relevance</div>
+            <div class="rule-val">AI / ML Keywords</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with q4:
+        st.markdown("""
+        <div class="rule-badge">
+            <div class="rule-label">Rule 4: Contact</div>
+            <div class="rule-val">Valid Business Email</div>
         </div>
         """, unsafe_allow_html=True)
 
-    with k2:
-        st.markdown("""
-        <div class="rule-card">
-            <div class="rule-card-title">Rule 2: Engagement Rate</div>
-            <div class="rule-card-value">≥ 2.0%</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with k3:
-        st.markdown("""
-        <div class="rule-card">
-            <div class="rule-card-title">Rule 3: Tech Relevance</div>
-            <div class="rule-card-value">AI / ML / Tech Keywords</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with k4:
-        st.markdown("""
-        <div class="rule-card">
-            <div class="rule-card-title">Rule 4: Business Email</div>
-            <div class="rule-card-value">Verified Email Present</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
 
     if not df_all.empty:
-        selected_creator = st.selectbox("Select Influencer to Inspect Detailed Audit Log:", df_all["name"].tolist())
-        rec = df_all[df_all["name"] == selected_creator].iloc[0]
+        sel_creator = st.selectbox("Select Creator to Inspect Decision Log:", df_all["name"].tolist())
+        rec = df_all[df_all["name"] == sel_creator].iloc[0]
 
-        a_col1, a_col2 = st.columns([1, 1])
+        a1, a2 = st.columns(2)
+        with a1:
+            st.markdown(f"**Creator:** `{rec['name']}` ({rec['platform']})")
+            st.markdown(f"**Followers:** `{rec['followers']:,}` | **Engagement:** `{rec['engagement_rate']}%`")
+            st.markdown(f"**Email:** `{rec['email']}`")
+            st.markdown(f"**Themes:** `{rec['content_themes']}`")
 
-        with a_col1:
-            st.markdown(f"#### Creator Record: **{rec['name']}**")
-            st.markdown(f"- **Platform:** `{rec['platform']}`")
-            st.markdown(f"- **Subscribers / Followers:** `{rec['followers']:,}`")
-            st.markdown(f"- **Engagement Rate:** `{rec['engagement_rate']}%`")
-            st.markdown(f"- **Contact Email:** `{rec['email']}`")
-            st.markdown(f"- **Content Themes:** `{rec['content_themes']}`")
-            st.markdown(f"- **Estimated Audience Age:** `{rec.get('audience_age', '18-34')}`")
-            st.markdown(f"- **Geography:** `{rec.get('audience_geography', 'Global')}`")
-
-        with a_col2:
-            st.markdown("#### Decision Audit Engine Output")
-            verdict = rec.get("qualification_status", "PENDING")
-
-            if verdict == "QUALIFIED":
-                st.markdown('<span class="badge badge-qualified">VERDICT: QUALIFIED</span>', unsafe_allow_html=True)
+        with a2:
+            is_qual = rec.get("qualification_status") == "QUALIFIED"
+            if is_qual:
+                st.markdown('<span class="pill pill-green">QUALIFIED FOR OUTREACH</span>', unsafe_allow_html=True)
             else:
-                st.markdown('<span class="badge badge-disqualified">VERDICT: DISQUALIFIED</span>', unsafe_allow_html=True)
+                st.markdown('<span class="pill pill-red">DISQUALIFIED</span>', unsafe_allow_html=True)
 
-            reason_log = rec.get("qualification_reason", "No audit log available.")
-            st.code(reason_log, language="text")
+            st.code(rec.get("qualification_reason", "No audit details."), language="text")
 
 
 # -----------------------------------------------------------------------------
-# TAB 4: AI Personalization Preview (Email & DM)
+# TAB 4: AI Email Studio & Direct Send
 # -----------------------------------------------------------------------------
 with tab4:
-    st.markdown("### 💬 AI-Generated Personalized Collaboration Pitches")
+    st.markdown("##### AI Email Outreach & Message Studio")
 
-    qual_df = df_all[df_all["qualification_status"] == "QUALIFIED"]
-
-    if qual_df.empty:
-        st.info("No qualified creators found. Run the pipeline or load demo data.")
+    if df_all.empty:
+        st.info("No creators found. Load demo data or run discovery.")
     else:
-        sel_name = st.selectbox("Select Qualified Creator for Message Inspection:", qual_df["name"].tolist())
-        r = qual_df[qual_df["name"] == sel_name].iloc[0]
+        studio_view = st.radio("Workspace Mode:", ["Single Creator Email Editor", "Batch Send to All (Respective AI Pitches)"], horizontal=True)
+        st.divider()
 
-        p_col1, p_col2 = st.columns(2)
+        if "Single" in studio_view:
+            status_filter = st.radio(
+                "Filter Creators:",
+                ["Pending Outreach Only (Needs Email)", "Already Contacted / Sent", "All Qualified Creators"],
+                horizontal=True,
+                key="studio_status_filter"
+            )
 
-        with p_col1:
-            st.markdown("#### 📧 Email Collaboration Pitch (60–90 Words)")
-            email_text = r.get("email_message") or "No email message generated yet."
-            st.markdown(f'<div class="pitch-box">{email_text}</div>', unsafe_allow_html=True)
+            if "Pending" in status_filter:
+                pool = df_all[(df_all["qualification_status"] == "QUALIFIED") & (df_all["outreach_status"] != "SENT")]
+            elif "Already" in status_filter:
+                pool = df_all[(df_all["qualification_status"] == "QUALIFIED") & (df_all["outreach_status"] == "SENT")]
+            else:
+                pool = df_all[df_all["qualification_status"] == "QUALIFIED"]
 
-        with p_col2:
-            st.markdown("#### 💬 Instagram DM Pitch (15–30 Words)")
-            dm_text = r.get("instagram_dm") or "No DM generated yet."
-            st.markdown(f'<div class="pitch-box">{dm_text}</div>', unsafe_allow_html=True)
+            if pool.empty:
+                if "Pending" in status_filter:
+                    st.success("All qualified creators have already been emailed! Switch filter to 'Already Contacted' to inspect sent pitches.")
+                else:
+                    st.info("No creators match the selected filter.")
+                st.stop()
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("#### 🧬 Personalization Signals Employed")
-            st.markdown(f"- **Creator Name:** `{r.get('name')}`")
-            st.markdown(f"- **Content Themes:** `{r.get('content_themes')}`")
-            st.markdown(f"- **Recent Content Context:** `{str(r.get('recent_content'))[:100]}...`")
+            # Format options with status
+            creator_options = {
+                f"{r_item['name']} ({r_item.get('followers', 0):,} subs) — {'SENT' if r_item.get('outreach_status') == 'SENT' else 'PENDING'}": r_item["name"]
+                for _, r_item in pool.iterrows()
+            }
+
+            sel_label = st.selectbox("Select Creator:", list(creator_options.keys()), key="studio_single_sel")
+            target_name = creator_options[sel_label]
+            row = pool[pool["name"] == target_name].iloc[0]
+            cid = int(row["id"])
+            is_already_sent = (row.get("outreach_status") == "SENT")
+
+            # Info Header
+            ih1, ih2, ih3, ih4 = st.columns(4)
+            with ih1:
+                st.caption("Audience")
+                st.markdown(f"**{row.get('followers', 0):,} Subs**")
+            with ih2:
+                st.caption("Engagement")
+                st.markdown(f"**{row.get('engagement_rate', 0.0)}%**")
+            with ih3:
+                st.caption("Contact Email")
+                st.markdown(f"**{row.get('email') or 'Not Found'}**")
+            with ih4:
+                st.caption("Outreach Status")
+                if is_already_sent:
+                    st.markdown('<span class="pill pill-green">SENT</span>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<span class="pill pill-amber">PENDING</span>', unsafe_allow_html=True)
+
+            if is_already_sent:
+                st.info(f"Email Delivered: This creator has already been sent an outreach email. The Send button is locked to prevent duplicate emails.")
+
+            # Parse Email Subject & Body
+            raw_e = row.get("email_message") or ""
+            subj_val = f"Collaboration Opportunity with {row.get('name', 'Creator')}"
+            body_val = ""
+
+            if raw_e:
+                m_sub = re.search(r'Subject:\s*(.+?)(?:\n|$)', raw_e, re.IGNORECASE)
+                if m_sub:
+                    subj_val = m_sub.group(1).strip()
+                    body_val = raw_e[m_sub.end():].strip()
+                else:
+                    body_val = raw_e.strip()
+            else:
+                body_val = (
+                    f"Hi {row.get('name', 'Creator').split()[0]},\n\n"
+                    f"I've been following your {row.get('content_themes', 'tech')} content and really appreciate your videos. "
+                    f"Your audience aligns well with our upcoming campaign.\n\n"
+                    f"We'd love to explore a sponsorship collaboration with you. Are you open to discussing details?\n\n"
+                    f"Best regards,\nOutreach Team"
+                )
+
+            ed_col1, ed_col2 = st.columns([3, 2])
+
+            with ed_col1:
+                st.markdown("###### Editable Email Draft")
+                to_email = st.text_input("Recipient Email:", value=row.get("email") or "", key=f"to_{cid}")
+                sub_input = st.text_input("Subject Line:", value=subj_val, key=f"sub_{cid}")
+                body_input = st.text_area("Email Body:", value=body_val, height=200, key=f"body_{cid}")
+
+                mode_opt = st.radio("Delivery Mode:", ["Safe Simulation (Demo Mode)", "Real SMTP Delivery"], horizontal=True, key=f"mode_{cid}")
+
+                b1, b2, b3, b4 = st.columns(4)
+
+                with b1:
+                    if is_already_sent:
+                        if st.button("Reset & Re-send", use_container_width=True, key=f"reset_{cid}"):
+                            update_influencer(cid, {"outreach_status": "PENDING", "sent_at": None})
+                            st.toast(f"Status reset to Pending for {row.get('name')}.")
+                            st.rerun()
+                    else:
+                        if st.button("Send Email", type="primary", use_container_width=True, key=f"snd_{cid}"):
+                            if not to_email or "@" not in to_email or to_email == "Not Found":
+                                st.error("Please specify a valid email address.")
+                            else:
+                                pitch_text = f"Subject: {sub_input}\n\n{body_input}"
+                                update_influencer(cid, {"email": to_email, "email_message": pitch_text})
+
+                                sim = "Simulation" in mode_opt
+                                sender = EmailSender(simulate=sim)
+                                res = sender.send_email({"id": cid, "name": row.get("name"), "email": to_email, "email_message": pitch_text})
+
+                                if res.get("status") == "SENT":
+                                    st.toast(f"Email sent to {to_email} successfully.")
+                                    st.success(f"Email sent to **{to_email}**.")
+                                    st.rerun()
+                                elif res.get("status") == "DUPLICATE":
+                                    st.toast("Already contacted.")
+                                    st.warning("This creator was already contacted.")
+                                else:
+                                    st.error(f"Failed: {res.get('message')}")
+
+                with b2:
+                    if st.button("Save Draft", use_container_width=True, key=f"sav_{cid}"):
+                        pitch_text = f"Subject: {sub_input}\n\n{body_input}"
+                        update_influencer(cid, {"email": to_email, "email_message": pitch_text})
+                        st.toast(f"Draft saved for {row.get('name')}.")
+                        st.success("Draft saved to database.")
+
+                with b3:
+                    if st.button("AI Pitch", use_container_width=True, key=f"reg_{cid}"):
+                        with st.spinner("Generating fresh AI pitch..."):
+                            gen = MessageGenerator()
+                            new_m = gen.generate_messages(dict(row))
+                            update_influencer(cid, {
+                                "email_message": new_m["email_message"],
+                                "instagram_dm": new_m["instagram_dm"],
+                                "message_generated": 1,
+                            })
+                            st.toast(f"Fresh AI pitch created for {row.get('name')}.")
+                            st.rerun()
+
+                with b4:
+                    if st.button("Delete", use_container_width=True, key=f"del_{cid}"):
+                        if delete_influencer(cid):
+                            st.toast(f"Deleted {target_name}.")
+                            st.rerun()
+
+            with ed_col2:
+                st.markdown("###### Instagram DM Pitch")
+                st.text_area("DM Text:", value=row.get("instagram_dm") or f"Hi {row.get('name', 'Creator').split()[0]}! Love your {row.get('content_themes', 'tech')} content. Open to collaborating?", height=90, key=f"dm_{cid}")
+                st.caption("Demographic & Personalization Context:")
+                st.markdown(f"- **Niche:** `{row.get('niche')}`")
+                st.markdown(f"- **Themes:** `{row.get('content_themes')}`")
+                st.markdown(f"- **Recent Topic:** `{str(row.get('recent_content'))[:100]}...`")
+
+        else:
+            # Batch Send Console
+            st.markdown("###### Batch Outreach to All Creators")
+            st.caption("Sends each creator their own individually generated AI pitch to their verified email.")
+
+            b_pool = df_all[
+                (df_all["qualification_status"] == "QUALIFIED") &
+                (df_all["email"].notna()) &
+                (df_all["email"] != "") &
+                (df_all["email"] != "Not Found")
+            ]
+
+            p_cnt = len(b_pool[b_pool["outreach_status"] == "PENDING"]) if not b_pool.empty else 0
+            s_cnt = len(b_pool[b_pool["outreach_status"] == "SENT"]) if not b_pool.empty else 0
+
+            st.markdown(f"**Eligible Creators:** `{len(b_pool)}` | **Pending Outreach:** `{p_cnt}` | **Already Sent:** `{s_cnt}`")
+
+            b_mode = st.radio("Batch Mode:", ["Safe Simulation (Demo Mode)", "Real SMTP Delivery"], horizontal=True, key="batch_mode_sel")
+            b_confirm = st.checkbox(f"I confirm sending individual AI emails to {p_cnt} pending creators.", value=False)
+
+            if st.button("Launch Batch Outreach", type="primary", use_container_width=True, disabled=not b_confirm):
+                if p_cnt == 0:
+                    st.toast("No pending creators to email.")
+                    st.warning("All eligible creators have already been emailed.")
+                else:
+                    sim = "Simulation" in b_mode
+                    sender = EmailSender(simulate=sim)
+                    pbar = st.progress(0, text="Starting batch outreach...")
+
+                    targets = b_pool[b_pool["outreach_status"] == "PENDING"].to_dict("records")
+                    sent_total = 0
+
+                    for i, creator in enumerate(targets):
+                        cname = creator.get("name", "Creator")
+                        pbar.progress(int(((i + 1) / len(targets)) * 100), text=f"Sending ({i+1}/{len(targets)}): {cname}")
+
+                        if not creator.get("email_message"):
+                            gen = MessageGenerator()
+                            m = gen.generate_messages(creator)
+                            creator["email_message"] = m["email_message"]
+                            creator["instagram_dm"] = m["instagram_dm"]
+                            creator["message_generated"] = 1
+                            update_influencer(creator["id"], m)
+
+                        res = sender.send_email(creator)
+                        if res.get("status") == "SENT":
+                            sent_total += 1
+
+                    pbar.progress(100, text="Complete!")
+                    st.toast(f"Batch Outreach Done: {sent_total} emails processed.")
+                    st.success(f"Successfully processed {sent_total} outreach emails.")
+                    st.rerun()
 
 
 # -----------------------------------------------------------------------------
-# TAB 5: Outreach Delivery Tracker
+# TAB 5: Delivery Logs
 # -----------------------------------------------------------------------------
 with tab5:
-    st.markdown("### ✉️ Outreach Sending Layer & Complete Delivery Log")
+    st.markdown("##### Outreach Delivery Audit Logs")
 
     if not df_logs.empty:
         st.dataframe(
             df_logs,
             use_container_width=True,
             hide_index=True,
-            height=500,
+            height=450,
             column_config={
-                "id": st.column_config.NumberColumn("Log ID", width="small"),
-                "name": st.column_config.TextColumn("Recipient Name", width="medium"),
+                "id": st.column_config.NumberColumn("ID", width="small"),
+                "name": st.column_config.TextColumn("Recipient", width="medium"),
                 "platform": st.column_config.TextColumn("Platform", width="small"),
-                "email": st.column_config.TextColumn("Email Address", width="medium"),
-                "channel": st.column_config.TextColumn("Channel", width="small"),
-                "status": st.column_config.TextColumn("Delivery Status", width="small"),
+                "email": st.column_config.TextColumn("Email", width="medium"),
+                "status": st.column_config.TextColumn("Status", width="small"),
                 "sent_at": st.column_config.TextColumn("Sent Timestamp", width="medium"),
-                "created_at": st.column_config.TextColumn("Created Timestamp", width="medium"),
-                "error_message": st.column_config.TextColumn("Error Log", width="medium"),
+                "error_message": st.column_config.TextColumn("Details / Error", width="medium"),
             },
         )
     else:
-        st.info("No email outreach attempts logged yet. Click **'▶️ Execute Full Pipeline'** in the sidebar to send outreach.")
+        st.info("No delivery logs yet. Use Tab 4 to send emails.")

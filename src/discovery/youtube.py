@@ -24,6 +24,7 @@ class YouTubeDiscovery(BaseDiscovery):
             raise ValueError("YOUTUBE_API_KEY not set. Please add it to your .env file.")
         self.youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
         self.seen_channel_ids = set()
+        self.seen_names = set()
 
     def discover(self) -> list[dict]:
         """Discover influencers by searching YouTube for niche keywords."""
@@ -55,7 +56,7 @@ class YouTubeDiscovery(BaseDiscovery):
         """Search YouTube for a keyword and extract channel data."""
         next_page_token = None
 
-        for _ in range(3):  # Max 3 pages per keyword
+        for _ in range(5):  # Check up to 5 pages to find target count within threshold
             if len(self.discovered) >= self.target_count:
                 break
 
@@ -63,7 +64,7 @@ class YouTubeDiscovery(BaseDiscovery):
                 q=keyword,
                 part="snippet",
                 type="channel",
-                maxResults=25,
+                maxResults=50,
                 order="relevance",
                 pageToken=next_page_token,
             )
@@ -76,10 +77,25 @@ class YouTubeDiscovery(BaseDiscovery):
                 channel_id = item["snippet"]["channelId"]
                 if channel_id in self.seen_channel_ids:
                     continue
-                self.seen_channel_ids.add(channel_id)
 
                 channel_data = self._get_channel_details(channel_id)
-                if channel_data and self._validate_record(channel_data):
+                if not channel_data:
+                    continue
+
+                clean_name = channel_data.get("name", "").strip().lower()
+                if clean_name in self.seen_names:
+                    logger.info(f"Skipping duplicate channel by name: {channel_data.get('name')}")
+                    continue
+
+                # Enforce micro-influencer follower threshold (5K–100K)
+                followers = channel_data.get("followers", 0)
+                if not (MIN_FOLLOWERS <= followers <= MAX_FOLLOWERS):
+                    logger.info(f"Skipping channel outside follower range: {channel_data.get('name')} ({followers:,} subs)")
+                    continue
+
+                if self._validate_record(channel_data):
+                    self.seen_channel_ids.add(channel_id)
+                    self.seen_names.add(clean_name)
                     self.discovered.append(channel_data)
 
             next_page_token = response.get("nextPageToken")

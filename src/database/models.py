@@ -91,9 +91,23 @@ def init_db():
 
 
 def insert_influencer(data: dict) -> Optional[int]:
-    """Insert a new influencer record. Returns the ID or None if duplicate."""
+    """Insert a new influencer record. Returns the ID or None if duplicate by URL or name."""
     conn = get_connection()
     cursor = conn.cursor()
+
+    name = data.get("name", "").strip()
+    profile_url = data.get("profile_url", "").strip()
+
+    # Deduplicate: check if creator with same normalized name or profile_url already exists
+    cursor.execute(
+        "SELECT id, name FROM influencers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) OR profile_url = ?",
+        (name, profile_url)
+    )
+    existing = cursor.fetchone()
+    if existing:
+        logger.warning(f"Duplicate creator skipped: '{name}' matches existing record ID {existing[0]}")
+        conn.close()
+        return None
 
     try:
         cursor.execute("""
@@ -322,6 +336,43 @@ def get_stats() -> dict:
         "emails_failed": failed,
         "emails_pending": pending,
     }
+
+
+def delete_influencer(influencer_id: int) -> bool:
+    """Delete an influencer and their associated outreach logs from the database."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM outreach_log WHERE influencer_id = ?", (influencer_id,))
+        cursor.execute("DELETE FROM influencers WHERE id = ?", (influencer_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        logger.info(f"Deleted influencer ID {influencer_id} from database")
+        return deleted
+    except Exception as e:
+        logger.error(f"Failed to delete influencer ID {influencer_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def clear_influencer_message(influencer_id: int) -> bool:
+    """Clear/delete generated AI messages for an influencer."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE influencers
+            SET email_message = NULL, instagram_dm = NULL, message_generated = 0, outreach_status = 'PENDING', sent_at = NULL
+            WHERE id = ?
+        """, (influencer_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear messages for influencer ID {influencer_id}: {e}")
+        return False
+    finally:
+        conn.close()
 
 
 def clear_all_data():

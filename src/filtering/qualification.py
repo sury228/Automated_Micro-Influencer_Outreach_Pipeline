@@ -100,15 +100,12 @@ class InfluencerQualifier:
             score += 5  # Still eligible but lower priority
 
         # --- Determine Status ---
-        # QUALIFIED if: follower check passes AND (engagement OR relevance passes)
-        follower_pass = (self.min_followers <= followers <= self.max_followers) if followers > 0 else False
+        # QUALIFIED strictly if: follower count is within threshold (5K-100K) AND (engagement OR relevance passes)
+        follower_pass = (self.min_followers <= followers <= self.max_followers)
         engagement_pass = engagement >= self.min_engagement
         relevance_pass = relevance_score >= 1
 
         if follower_pass and (engagement_pass or relevance_pass):
-            status = "QUALIFIED"
-        elif followers == 0 and relevance_pass:
-            # Unknown followers but relevant content — mark for manual review
             status = "QUALIFIED"
         else:
             status = "DISQUALIFIED"

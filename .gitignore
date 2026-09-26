@@ -1,13 +1,42 @@
-# Byte-compiled / optimized / DLL files
+# ==============================================================================
+# Environment Variables & Secrets (CRITICAL for Deployment & Security)
+# ==============================================================================
+.env
+.env.*
+!.env.example
+secrets.toml
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+client_secret*.json
+token.pickle
+token.json
+
+# ==============================================================================
+# Byte-compiled / Optimized / DLL Files
+# ==============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
+*.pyd
 
-# Distribution / packaging
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
 .Python
+
+# ==============================================================================
+# Distribution / Packaging / Builds
+# ==============================================================================
 build/
 develop-eggs/
 dist/
@@ -26,56 +55,71 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tosca/
-.pytest_cache/
-.nobuild
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.run/
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Streamlit config and cache
-.streamlit/
-
-# Database files
+# ==============================================================================
+# Databases & SQLite Stores
+# ==============================================================================
 *.db
 *.sqlite
 *.sqlite3
 data/outreach.db
 
-# Log files
+# ==============================================================================
+# Logs & Diagnostic Outputs
+# ==============================================================================
 *.log
+logs/
 pipeline.log
+pip-log.txt
+pip-delete-this-directory.txt
 
-# OS generated files
+# ==============================================================================
+# Testing, Linting & Coverage
+# ==============================================================================
+htmlcov/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# ==============================================================================
+# Streamlit Configuration & Secrets
+# ==============================================================================
+.streamlit/secrets.toml
+
+# ==============================================================================
+# OS Generated Files
+# ==============================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Extra / temporary files
+# ==============================================================================
+# IDEs & Editor Settings
+# ==============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ==============================================================================
+# Temporary, Large Data & Assignment Files
+# ==============================================================================
 assingment 1.txt
 assignment 1.txt
-
+assignment*.txt
+ibtracs*.csv
+scratch/
+*.tmp

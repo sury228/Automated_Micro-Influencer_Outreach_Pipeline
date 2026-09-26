@@ -1,5 +1,5 @@
 """
-LLM-based message generator using Google Gemini API.
+LLM-based message generator supporting Groq API and Google Gemini API.
 Generates personalized email pitches and Instagram DMs for each influencer.
 """
 
@@ -8,9 +8,7 @@ import time
 import re
 from typing import Optional
 
-import google.generativeai as genai
-
-from src.config import GEMINI_API_KEY
+from src.config import GEMINI_API_KEY, GROQ_API_KEY, LLM_PROVIDER
 from src.personalization.prompts import EMAIL_PROMPT_TEMPLATE, DM_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
@@ -18,28 +16,65 @@ logger = logging.getLogger(__name__)
 
 class MessageGenerator:
     """
-    Generate personalized outreach messages using Google Gemini.
+    Generate personalized outreach messages using Groq or Google Gemini.
     Each message is unique to the influencer based on their actual data.
     """
 
     def __init__(self):
-        if GEMINI_API_KEY:
+        self.provider = None
+        self.groq_client = None
+        self.gemini_model = None
+
+        # Determine provider
+        if (LLM_PROVIDER == "groq" or (LLM_PROVIDER == "auto" and GROQ_API_KEY)) and GROQ_API_KEY:
             try:
-                genai.configure(api_key=GEMINI_API_KEY)
-                self.model = genai.GenerativeModel("gemini-2.0-flash")
+                from groq import Groq
+                self.groq_client = Groq(api_key=GROQ_API_KEY)
+                self.groq_model = "llama-3.3-70b-versatile"
+                self.provider = "groq"
+                logger.info(f"Initialized Groq LLM MessageGenerator with model: {self.groq_model}")
             except Exception as e:
-                logger.warning(f"Failed to configure Gemini model: {e}. Using fallback generator.")
-                self.model = None
-        else:
-            logger.info("GEMINI_API_KEY not set. Using intelligent fallback message generator.")
-            self.model = None
+                logger.warning(f"Failed to initialize Groq client: {e}")
+
+        if not self.provider and GEMINI_API_KEY:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=GEMINI_API_KEY)
+                self.gemini_model = genai.GenerativeModel("gemini-2.0-flash")
+                self.provider = "gemini"
+                logger.info("Initialized Gemini LLM MessageGenerator with gemini-2.0-flash")
+            except Exception as e:
+                logger.warning(f"Failed to configure Gemini model: {e}")
+
+        if not self.provider:
+            logger.info("No LLM API keys (GROQ_API_KEY / GEMINI_API_KEY) available. Using intelligent fallback message generator.")
+
+    def _call_llm(self, prompt: str) -> Optional[str]:
+        """Call either Groq or Gemini based on active provider."""
+        if self.provider == "groq" and self.groq_client:
+            response = self.groq_client.chat.completions.create(
+                model=self.groq_model,
+                messages=[
+                    {"role": "system", "content": "You are an expert influencer marketing and outreach copywriter."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500,
+            )
+            return response.choices[0].message.content.strip()
+
+        elif self.provider == "gemini" and self.gemini_model:
+            response = self.gemini_model.generate_content(prompt)
+            return response.text.strip()
+
+        return None
 
     def generate_email(self, influencer: dict) -> dict:
         """
         Generate a personalized email pitch for an influencer.
         Returns dict with 'subject' and 'body'.
         """
-        if not self.model:
+        if not self.provider:
             return self._fallback_email(influencer)
 
         name = influencer.get("name", "Creator")
@@ -56,8 +91,9 @@ class MessageGenerator:
         )
 
         try:
-            response = self.model.generate_content(prompt)
-            text = response.text.strip()
+            text = self._call_llm(prompt)
+            if not text:
+                return self._fallback_email(influencer)
 
             # Parse subject and body
             subject, body = self._parse_email_response(text, name)
@@ -74,7 +110,7 @@ class MessageGenerator:
         Generate a personalized Instagram DM for an influencer.
         Returns the DM text.
         """
-        if not self.model:
+        if not self.provider:
             return self._fallback_dm(influencer)
 
         name = influencer.get("name", "Creator")
@@ -88,8 +124,11 @@ class MessageGenerator:
         )
 
         try:
-            response = self.model.generate_content(prompt)
-            dm_text = response.text.strip().strip('"')
+            text = self._call_llm(prompt)
+            if not text:
+                return self._fallback_dm(influencer)
+
+            dm_text = text.strip().strip('"')
 
             logger.info(f"  DM generated for {name}: '{dm_text[:50]}...'")
             return dm_text
