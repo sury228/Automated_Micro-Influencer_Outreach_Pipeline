@@ -24,8 +24,12 @@ from src.database.models import (
     delete_influencer,
     clear_influencer_message,
     update_influencer,
+    init_db,
 )
 from src.pipeline import OutreachPipeline
+
+# Ensure database tables exist (critical for Streamlit Cloud first launch)
+init_db()
 from src.outreach.tracker import OutreachTracker
 from src.outreach.email_sender import EmailSender
 from src.personalization.generator import MessageGenerator
