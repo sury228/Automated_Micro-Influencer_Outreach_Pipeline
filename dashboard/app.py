@@ -328,7 +328,7 @@ with st.sidebar:
     st.caption(f"Niche: **{TARGET_NICHE}** | Rules: **5K–100K Subs**")
     st.divider()
 
-    if st.button("Run Full Pipeline", use_container_width=True, type="primary"):
+    if st.button("Run Full Pipeline", width='stretch', type="primary"):
         with st.spinner("Executing pipeline..."):
             pipeline = OutreachPipeline(simulate_email=True)
             res = pipeline.run_full_pipeline()
@@ -338,19 +338,19 @@ with st.sidebar:
             else:
                 st.error(f"Error: {res.get('error')}")
 
-    if st.button("Load 50 Demo Creators", use_container_width=True):
+    if st.button("Load 50 Demo Creators", width='stretch'):
         with st.spinner("Loading demo records..."):
             import subprocess
             subprocess.run([sys.executable, "run.py", "--action", "demo-data"], cwd=str(PROJECT_ROOT))
             st.toast("50 Demo creators loaded and qualified.")
             st.rerun()
 
-    if st.button("Export CSV Reports", use_container_width=True):
+    if st.button("Export CSV Reports", width='stretch'):
         tracker = OutreachTracker()
         tracker.export_all()
         st.toast("CSV files saved to data/ and outputs/.")
 
-    if st.button("Clear Database", use_container_width=True):
+    if st.button("Clear Database", width='stretch'):
         clear_all_data()
         st.toast("Database reset successfully.")
         st.rerun()
@@ -466,7 +466,7 @@ with tab1:
             {"Stage": "4. AI Pitch", "Engine": "Groq / Gemini LLM", "Criteria": "Custom 60–90w Email + 15–30w DM", "Output": f"{stats['messages_generated']} Pitches"},
             {"Stage": "5. Outreach", "Engine": "SMTP / Safe Simulator", "Criteria": "Duplicate prevention & audit log", "Output": f"{stats['emails_sent']} Delivered"},
         ]),
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
     )
 
@@ -502,7 +502,7 @@ with tab2:
 
     st.dataframe(
         filtered_df[avail],
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         height=400,
         column_config={
@@ -526,7 +526,7 @@ with tab2:
                 del_name = st.selectbox("Select channel to remove:", df_all["name"].tolist(), key="tab2_del_name")
             with d_c2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("Delete Channel", use_container_width=True, key="tab2_del_btn"):
+                if st.button("Delete Channel", width='stretch', key="tab2_del_btn"):
                     r_del = df_all[df_all["name"] == del_name].iloc[0]
                     if delete_influencer(int(r_del["id"])):
                         st.toast(f"Deleted '{del_name}' from database.")
@@ -695,12 +695,12 @@ with tab4:
 
                 with b1:
                     if is_already_sent:
-                        if st.button("Reset & Re-send", use_container_width=True, key=f"reset_{cid}"):
+                        if st.button("Reset & Re-send", width='stretch', key=f"reset_{cid}"):
                             update_influencer(cid, {"outreach_status": "PENDING", "sent_at": None})
                             st.toast(f"Status reset to Pending for {row.get('name')}.")
                             st.rerun()
                     else:
-                        if st.button("Send Email", type="primary", use_container_width=True, key=f"snd_{cid}"):
+                        if st.button("Send Email", type="primary", width='stretch', key=f"snd_{cid}"):
                             if not to_email or "@" not in to_email or to_email == "Not Found":
                                 st.error("Please specify a valid email address.")
                             else:
@@ -722,14 +722,14 @@ with tab4:
                                     st.error(f"Failed: {res.get('message')}")
 
                 with b2:
-                    if st.button("Save Draft", use_container_width=True, key=f"sav_{cid}"):
+                    if st.button("Save Draft", width='stretch', key=f"sav_{cid}"):
                         pitch_text = f"Subject: {sub_input}\n\n{body_input}"
                         update_influencer(cid, {"email": to_email, "email_message": pitch_text})
                         st.toast(f"Draft saved for {row.get('name')}.")
                         st.success("Draft saved to database.")
 
                 with b3:
-                    if st.button("AI Pitch", use_container_width=True, key=f"reg_{cid}"):
+                    if st.button("AI Pitch", width='stretch', key=f"reg_{cid}"):
                         with st.spinner("Generating fresh AI pitch..."):
                             gen = MessageGenerator()
                             new_m = gen.generate_messages(dict(row))
@@ -742,7 +742,7 @@ with tab4:
                             st.rerun()
 
                 with b4:
-                    if st.button("Delete", use_container_width=True, key=f"del_{cid}"):
+                    if st.button("Delete", width='stretch', key=f"del_{cid}"):
                         if delete_influencer(cid):
                             st.toast(f"Deleted {target_name}.")
                             st.rerun()
@@ -775,7 +775,7 @@ with tab4:
             b_mode = st.radio("Batch Mode:", ["Safe Simulation (Demo Mode)", "Real SMTP Delivery"], horizontal=True, key="batch_mode_sel")
             b_confirm = st.checkbox(f"I confirm sending individual AI emails to {p_cnt} pending creators.", value=False)
 
-            if st.button("Launch Batch Outreach", type="primary", use_container_width=True, disabled=not b_confirm):
+            if st.button("Launch Batch Outreach", type="primary", width='stretch', disabled=not b_confirm):
                 if p_cnt == 0:
                     st.toast("No pending creators to email.")
                     st.warning("All eligible creators have already been emailed.")
@@ -818,7 +818,7 @@ with tab5:
     if not df_logs.empty:
         st.dataframe(
             df_logs,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             height=450,
             column_config={
